@@ -23,7 +23,7 @@ import config
 from sheets import SheetsClient
 from cogs.attendance import Attendance
 
-log = logging.getLogger("loot_bot.ticker")
+log = logging.getLogger("quarter_master.ticker")
 
 _CONFIG_FILE = "bot_config.json"
 _TICK_MINUTES = 30

@@ -1,4 +1,4 @@
-"""Loot Bot — main entry point."""
+"""Quarter Master — main entry point."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
-log = logging.getLogger("loot_bot")
+log = logging.getLogger("quarter_master")
 
 # ---------------------------------------------------------------------------
 # Bot setup
@@ -34,7 +34,7 @@ intents.members = True          # Required to read voice channel members
 intents.voice_states = True     # Required to snapshot voice channel state
 
 
-class LootBot(commands.Bot):
+class QuarterMasterBot(commands.Bot):
     def __init__(self, sheets_client: SheetsClient) -> None:
         super().__init__(command_prefix="!", intents=intents)
         self.sheets = sheets_client
@@ -70,7 +70,7 @@ def main() -> None:
     sheets_client = SheetsClient()
     log.info("Google Sheets ready.")
 
-    bot = LootBot(sheets_client)
+    bot = QuarterMasterBot(sheets_client)
     bot.run(config.DISCORD_TOKEN, log_handler=None)
 
 

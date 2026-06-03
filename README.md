@@ -1,4 +1,4 @@
-# Loot Bot
+# Quarter Master
 
 Discord bot for tracking event attendance and running session-scoped ticket-weighted loot raffles.
 
@@ -111,3 +111,8 @@ Sensitive/local files are intentionally ignored:
 - Missing `GUILD_ID`: ensure `.env` exists in project root and contains `GUILD_ID=<server_id>`
 - Service account file not found: verify `GSPREAD_SERVICE_ACCOUNT_FILE` points to a real file
 - Commands not visible: ensure bot is invited to the same server as `GUILD_ID`, then restart bot
+
+## Contact
+
+- Discord: `z0mbi3jesus`
+- Email: `hnlebowski@gmail.com`
