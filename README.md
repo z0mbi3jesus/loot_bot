@@ -115,4 +115,4 @@ Sensitive/local files are intentionally ignored:
 ## Contact
 
 - Discord: `z0mbi3jesus`
-- Email: `hnlebowski@gmail.com`
+- Email: `hnlebowski@gmail.com'
