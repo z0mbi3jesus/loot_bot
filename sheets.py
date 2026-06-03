@@ -133,6 +133,13 @@ class SheetsClient:
         sorted_records = sorted(records, key=lambda r: int(r.get("tickets", 0)), reverse=True)
         return sorted_records[:top_n]
 
+    def get_session_ticket_records(self, session_id: str) -> list[dict]:
+        """Return all ticket records for a session sorted by ticket count descending."""
+        records = [
+            r for r in self._session_tickets.get_all_records() if r.get("session_id") == session_id
+        ]
+        return sorted(records, key=lambda r: int(r.get("tickets", 0)), reverse=True)
+
     def get_session_attendees(self, session_id: str) -> list[int]:
         session = self.get_session(session_id)
         if session is None:

@@ -68,28 +68,34 @@ class Loot(commands.Cog):
             )
             return
 
-        attendee_ids = self.sheets.get_session_attendees(session_id)
-        if not attendee_ids:
+        ticket_records = self.sheets.get_session_ticket_records(session_id)
+        if not ticket_records:
             await interaction.followup.send(
-                f"No attendees recorded for session `{session_id}`.",
+                f"No ticket records found for session `{session_id}`.",
                 ephemeral=True,
             )
             return
 
-        # Build weighted pool from session-scoped ticket counts.
+        # Build weighted pool from members who have at least 1 ticket in this session.
         pool: list[dict] = []
-        for uid in attendee_ids:
-            member = interaction.guild.get_member(uid)
+        for record in ticket_records:
+            tickets = int(record.get("tickets", 0))
+            if tickets < 1:
+                continue
+
+            member = interaction.guild.get_member(int(record["discord_id"]))
             if member is None:
                 continue
-            record = self.sheets.get_session_tickets(session_id, uid)
             pool.append({
                 "member": member,
-                "tickets": record["tickets"] if record else 0,
+                "tickets": tickets,
             })
 
         if not pool:
-            await interaction.followup.send("Could not resolve any attendees.", ephemeral=True)
+            await interaction.followup.send(
+                "No eligible members with at least 1 ticket were found in this server.",
+                ephemeral=True,
+            )
             return
 
         result = _weighted_draw(pool)
