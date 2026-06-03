@@ -21,6 +21,7 @@ from discord.ext import commands, tasks
 
 import config
 from sheets import SheetsClient
+from cogs.attendance import Attendance
 
 log = logging.getLogger("loot_bot.ticker")
 
@@ -59,6 +60,9 @@ class Ticker(commands.Cog):
     def cog_unload(self) -> None:
         self.tick.cancel()
 
+    def _get_attendance_cog(self) -> Attendance | None:
+        return self.bot.cogs.get("Attendance")  # type: ignore[return-value]
+
     # ------------------------------------------------------------------
     # Persistence helpers
     # ------------------------------------------------------------------
@@ -83,7 +87,12 @@ class Ticker(commands.Cog):
     @tasks.loop(minutes=_TICK_MINUTES)
     async def tick(self) -> None:
         log.info("Ticker fired — scanning watched channels.")
+        attendance_cog = self._get_attendance_cog()
         for guild_id, channel_ids in self._watched.items():
+            session_id = attendance_cog.get_active_session(guild_id) if attendance_cog else None
+            if session_id is None:
+                continue
+
             guild = self.bot.get_guild(guild_id)
             if guild is None:
                 continue
@@ -96,14 +105,18 @@ class Ticker(commands.Cog):
                 for member in channel.members:
                     if member.bot or member.id in awarded:
                         continue
-                    new_total = self.sheets.upsert_member(
-                        member.id, member.display_name, tickets_delta=1
+                    new_total = self.sheets.upsert_session_member(
+                        session_id,
+                        member.id,
+                        member.display_name,
+                        tickets_delta=1,
                     )
                     awarded.add(member.id)
                     log.debug(
-                        "Awarded 1 ticket to %s (%s) → total %s",
+                        "Awarded 1 ticket to %s (%s) for session %s → total %s",
                         member.display_name,
                         member.id,
+                        session_id,
                         new_total,
                     )
 

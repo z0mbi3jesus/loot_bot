@@ -59,9 +59,6 @@ class Attendance(commands.Cog):
             )
             return
 
-        if dkp_reward <= 0:
-            dkp_reward = config.DEFAULT_SESSION_DKP
-
         members = [m for m in voice_channel.members if not m.bot]
         if not members:
             await interaction.followup.send(

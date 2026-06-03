@@ -10,7 +10,6 @@ from discord.ext import commands
 
 import config
 from sheets import SheetsClient
-from cogs.attendance import Attendance
 
 
 def _is_officer(interaction: discord.Interaction) -> bool:
@@ -34,23 +33,22 @@ class Loot(commands.Cog):
         self.bot = bot
         self.sheets = sheets
 
-    def _get_attendance_cog(self) -> Attendance | None:
-        return self.bot.cogs.get("Attendance")  # type: ignore[return-value]
-
     # ------------------------------------------------------------------
     # /raffle_loot
     # ------------------------------------------------------------------
 
     @app_commands.command(
         name="raffle_loot",
-        description="Run a weighted raffle among session attendees for an item (Officer only).",
+        description="Run a weighted raffle for a specific session (Officer only).",
     )
     @app_commands.describe(
+        session_id="The session ID to raffle from.",
         item_name="Name of the item being raffled.",
     )
     async def raffle_loot(
         self,
         interaction: discord.Interaction,
+        session_id: str,
         item_name: str,
     ) -> None:
         await interaction.response.defer(ephemeral=False)
@@ -62,32 +60,29 @@ class Loot(commands.Cog):
             )
             return
 
-        attendance_cog = self._get_attendance_cog()
-        session_id = (
-            attendance_cog.get_active_session(interaction.guild_id)
-            if attendance_cog
-            else None
-        )
-
-        if session_id is None:
+        session = self.sheets.get_session(session_id)
+        if session is None:
             await interaction.followup.send(
-                "No active session. Start one with `/start_session` first.",
+                f"Session `{session_id}` was not found.",
                 ephemeral=True,
             )
             return
 
-        attendee_ids = attendance_cog.get_attendee_ids(interaction.guild_id) if attendance_cog else []
+        attendee_ids = self.sheets.get_session_attendees(session_id)
         if not attendee_ids:
-            await interaction.followup.send("No attendees recorded for this session.", ephemeral=True)
+            await interaction.followup.send(
+                f"No attendees recorded for session `{session_id}`.",
+                ephemeral=True,
+            )
             return
 
-        # Build weighted pool from live ticket counts
+        # Build weighted pool from session-scoped ticket counts.
         pool: list[dict] = []
         for uid in attendee_ids:
             member = interaction.guild.get_member(uid)
             if member is None:
                 continue
-            record = self.sheets.get_tickets(uid)
+            record = self.sheets.get_session_tickets(session_id, uid)
             pool.append({
                 "member": member,
                 "tickets": record["tickets"] if record else 0,
@@ -99,16 +94,14 @@ class Loot(commands.Cog):
 
         result = _weighted_draw(pool)
         winner: discord.Member = result["member"]
-        tickets_spent: int = result["tickets"]
+        winner_tickets: int = result["tickets"]
 
-        # Winner loses all their tickets (reset to 0)
-        self.sheets.upsert_member(winner.id, winner.display_name, tickets_delta=-tickets_spent)
         self.sheets.log_loot(
             session_id=session_id,
             item_name=item_name,
             winner_id=winner.id,
             winner_name=winner.display_name,
-            tickets_spent=tickets_spent,
+            winner_tickets=winner_tickets,
         )
 
         # Build odds summary for transparency
@@ -123,12 +116,12 @@ class Loot(commands.Cog):
             )
 
         embed = discord.Embed(
-            title="🎲 Raffle Result",
+            title="Raffle Result",
             color=discord.Color.gold(),
         )
         embed.add_field(name="Item", value=item_name, inline=False)
         embed.add_field(name="Winner", value=winner.mention, inline=True)
-        embed.add_field(name="Tickets Used", value=str(tickets_spent), inline=True)
+        embed.add_field(name="Winner Tickets", value=str(winner_tickets), inline=True)
         embed.add_field(name="Session", value=f"`{session_id}`", inline=True)
         embed.add_field(
             name="Draw Odds",

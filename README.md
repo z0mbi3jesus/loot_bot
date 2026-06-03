@@ -1,13 +1,13 @@
 # Loot Bot
 
-Discord bot for tracking event attendance and running ticket-weighted loot raffles.
+Discord bot for tracking event attendance and running session-scoped ticket-weighted loot raffles.
 
 ## What It Does
 
 - Awards 1 raffle ticket every 30 minutes to members present in watched voice channels.
 - Starts and ends loot sessions with attendee snapshots.
-- Runs weighted raffles where more tickets increase odds.
-- Logs sessions, tickets, and loot outcomes to Google Sheets.
+- Runs weighted raffles where more tickets increase odds within a single session.
+- Logs sessions, session tickets, and loot outcomes to Google Sheets.
 
 ## Tech Stack
 
@@ -23,7 +23,7 @@ Discord bot for tracking event attendance and running ticket-weighted loot raffl
 - `sheets.py` - Google Sheets data access layer
 - `cogs/attendance.py` - Session start/end and attendance commands
 - `cogs/loot.py` - Weighted raffle command
-- `cogs/dkp.py` - Ticket balance and standings commands
+- `cogs/dkp.py` - Session ticket lookup and standings commands
 - `cogs/ticker.py` - 30-minute ticket loop and watch-channel commands
 - `bot_config.json` - Local persisted watched channels (ignored by git)
 
@@ -67,25 +67,25 @@ Expected startup lines include:
 
 - `/start_session <voice_channel>`
 - `/end_session`
-- `/raffle_loot <item_name>`
-- `/add_tickets <member> <amount> [reason]`
+- `/raffle_loot <session_id> <item_name>`
+- `/add_tickets <session_id> <member> <amount> [reason]`
 - `/add_watch_channel <voice_channel>`
 - `/remove_watch_channel <voice_channel>`
 
 ### General Commands
 
 - `/attendance`
-- `/tickets [member]`
-- `/standings [top]`
+- `/tickets <session_id> [member]`
+- `/standings <session_id> [top]`
 - `/watch_channels`
 
 ## Data Model (Google Sheets)
 
 Worksheets are auto-created on first successful run:
 
-- `tickets`: `discord_id | name | tickets`
+- `session_tickets`: `session_id | discord_id | name | tickets`
 - `sessions`: `session_id | start_time | end_time | voice_channel | attendees`
-- `loot_log`: `timestamp | session_id | item_name | winner_id | winner_name | tickets_spent`
+- `loot_log`: `timestamp | session_id | item_name | winner_id | winner_name | winner_tickets`
 
 ## Testing Flow (Quick)
 
@@ -93,8 +93,8 @@ Worksheets are auto-created on first successful run:
 2. Run `/add_watch_channel` for your event voice channel.
 3. Confirm with `/watch_channels`.
 4. Start a session with `/start_session`.
-5. Wait for a 30-minute tick, then verify with `/tickets`.
-6. Run `/raffle_loot` with a test item.
+5. Wait for a 30-minute tick, then verify with `/tickets <session_id>`.
+6. Run `/raffle_loot <session_id> <test_item>`.
 7. End session with `/end_session`.
 
 ## Git Notes

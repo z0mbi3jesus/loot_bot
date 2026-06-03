@@ -1,4 +1,4 @@
-"""Ticket viewing and management cog."""
+"""Session ticket viewing and management cog."""
 
 from __future__ import annotations
 
@@ -27,26 +27,38 @@ class DKP(commands.Cog):
 
     @app_commands.command(
         name="tickets",
-        description="Check your raffle ticket balance (or another member's).",
+        description="Check ticket count for a specific session.",
     )
-    @app_commands.describe(member="The member to look up (defaults to you).")
+    @app_commands.describe(
+        session_id="The session ID to inspect.",
+        member="The member to look up (defaults to you).",
+    )
     async def tickets(
         self,
         interaction: discord.Interaction,
+        session_id: str,
         member: discord.Member | None = None,
     ) -> None:
         target = member or interaction.user
-        record = self.sheets.get_tickets(target.id)
+        record = self.sheets.get_session_tickets(session_id, target.id)
+
+        if record is None:
+            await interaction.response.send_message(
+                f"No ticket record found for **{target.display_name}** in session `{session_id}`.",
+                ephemeral=True,
+            )
+            return
 
         embed = discord.Embed(
-            title="Raffle Tickets",
+            title="Session Tickets",
             color=discord.Color.blurple(),
         )
         embed.set_thumbnail(url=target.display_avatar.url)
         embed.add_field(name="Member", value=target.mention, inline=True)
+        embed.add_field(name="Session", value=f"`{session_id}`", inline=True)
         embed.add_field(
             name="Tickets",
-            value=str(record["tickets"]) if record else "0 (not yet recorded)",
+            value=str(record["tickets"]),
             inline=True,
         )
         await interaction.response.send_message(embed=embed)
@@ -57,27 +69,30 @@ class DKP(commands.Cog):
 
     @app_commands.command(
         name="standings",
-        description="Show the top raffle ticket holders.",
+        description="Show the top ticket holders for a session.",
     )
-    @app_commands.describe(top="How many members to show (max 25, default 15).")
+    @app_commands.describe(
+        session_id="The session ID to inspect.",
+        top="How many members to show (max 25, default 15).",
+    )
     async def standings(
-        self, interaction: discord.Interaction, top: int = 15
+        self, interaction: discord.Interaction, session_id: str, top: int = 15
     ) -> None:
         top = min(max(1, top), 25)
-        records = self.sheets.get_standings(top_n=top)
+        records = self.sheets.get_session_ticket_standings(session_id, top_n=top)
 
         if not records:
             await interaction.response.send_message(
-                "No ticket records found yet.", ephemeral=True
+                f"No ticket records found for session `{session_id}`.", ephemeral=True
             )
             return
 
         lines: list[str] = []
         for i, rec in enumerate(records, start=1):
-            lines.append(f"`{i:>2}.` **{rec['name']}** — {rec['tickets']} ticket(s)")
+            lines.append(f"`{i:>2}.` **{rec['name']}** - {rec['tickets']} ticket(s)")
 
         embed = discord.Embed(
-            title="Ticket Standings",
+            title="Session Ticket Standings",
             description="\n".join(lines),
             color=discord.Color.gold(),
         )
@@ -89,9 +104,10 @@ class DKP(commands.Cog):
 
     @app_commands.command(
         name="add_tickets",
-        description="Manually add (or remove) tickets for a member (Officer only).",
+        description="Manually add or remove tickets for a member in a session (Officer only).",
     )
     @app_commands.describe(
+        session_id="The session ID to adjust.",
         member="The member to adjust.",
         amount="Tickets to add (use negative to deduct).",
         reason="Optional reason shown in the confirmation message.",
@@ -99,6 +115,7 @@ class DKP(commands.Cog):
     async def add_tickets(
         self,
         interaction: discord.Interaction,
+        session_id: str,
         member: discord.Member,
         amount: int,
         reason: str = "Manual adjustment",
@@ -112,14 +129,20 @@ class DKP(commands.Cog):
             )
             return
 
-        new_total = self.sheets.upsert_member(member.id, member.display_name, tickets_delta=amount)
+        new_total = self.sheets.upsert_session_member(
+            session_id,
+            member.id,
+            member.display_name,
+            tickets_delta=amount,
+        )
         action = f"+{amount}" if amount >= 0 else str(amount)
 
         embed = discord.Embed(
-            title="Tickets Adjusted",
+            title="Session Tickets Adjusted",
             color=discord.Color.green() if amount >= 0 else discord.Color.red(),
         )
         embed.add_field(name="Member", value=member.mention, inline=True)
+        embed.add_field(name="Session", value=f"`{session_id}`", inline=True)
         embed.add_field(name="Change", value=action, inline=True)
         embed.add_field(name="New Total", value=str(new_total), inline=True)
         embed.add_field(name="Reason", value=reason, inline=False)
