@@ -1,4 +1,4 @@
-"""Quarter Master — main entry point."""
+"""Loot Bot — main entry point."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import discord
 from discord.ext import commands
 
 import config
-from sheets import SheetsClient
-from cogs import attendance, loot, dkp, ticker, fun
+from cogs import attendance, loot, dkp, ticker
+from repository import create_repository
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -23,7 +23,7 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
-log = logging.getLogger("quarter_master")
+log = logging.getLogger("loot_bot")
 
 # ---------------------------------------------------------------------------
 # Bot setup
@@ -34,10 +34,10 @@ intents.members = True          # Required to read voice channel members
 intents.voice_states = True     # Required to snapshot voice channel state
 
 
-class QuarterMasterBot(commands.Bot):
-    def __init__(self, sheets_client: SheetsClient) -> None:
+class LootBot(commands.Bot):
+    def __init__(self, repository) -> None:
         super().__init__(command_prefix="!", intents=intents)
-        self.sheets = sheets_client
+        self.sheets = repository
 
     async def setup_hook(self) -> None:
         guild = discord.Object(id=config.GUILD_ID)
@@ -46,7 +46,6 @@ class QuarterMasterBot(commands.Bot):
         await loot.setup(self, self.sheets)
         await dkp.setup(self, self.sheets)
         await ticker.setup(self, self.sheets)
-        await fun.setup(self)
 
         # Sync slash commands to the configured guild for instant availability.
         # Use bot.tree.sync() (no guild arg) to sync globally (takes ~1 hour).
@@ -66,11 +65,10 @@ class QuarterMasterBot(commands.Bot):
 
 
 def main() -> None:
-    log.info("Connecting to Google Sheets...")
-    sheets_client = SheetsClient()
-    log.info("Google Sheets ready.")
+    backend = create_repository()
+    log.info("Storage backend ready: %s", type(backend).__name__)
 
-    bot = QuarterMasterBot(sheets_client)
+    bot = LootBot(backend)
     bot.run(config.DISCORD_TOKEN, log_handler=None)
 
 
