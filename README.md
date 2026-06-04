@@ -9,13 +9,14 @@ This bot currently uses Google Sheets in production. It tracks one session at a 
 ## First-Run Checklist
 
 1. Invite the bot to your Discord server.
-2. Create a Google Sheet and copy the spreadsheet ID.
-3. Create a Google Cloud service account and download the JSON key.
-4. Put the JSON key in the project root.
-5. Copy `.env.example` to `.env` and fill in the values.
-6. Activate the virtual environment.
-7. Install dependencies with `python -m pip install -r requirements.txt`.
-8. Run `python bot.py`.
+2. Choose a backend:
+   - Google Sheets (current default)
+   - SQLite (local file database)
+3. If using Google Sheets: create the sheet, create service account credentials, and place the JSON key in the project root.
+4. Copy `.env.example` to `.env` and fill in values for your selected backend.
+5. Activate the virtual environment.
+6. Install dependencies with `python -m pip install -r requirements.txt`.
+7. Run `python bot.py`.
 
 ## What It Does
 
@@ -87,14 +88,26 @@ Copy `.env.example` to `.env` and fill in:
 
 - `DISCORD_TOKEN` - Bot token from the Discord Developer Portal
 - `GUILD_ID` - Your Discord server ID for fast slash command sync
-- `SPREADSHEET_ID` - Google Sheet ID from the sheet URL
-- `GSPREAD_SERVICE_ACCOUNT_FILE` - Service account JSON file path, usually `service_account.json`
-- `DATA_BACKEND` - Leave as `google_sheets` for now
+- `DATA_BACKEND` - Set to `google_sheets` or `sqlite`
 - `OFFICER_ROLE` - Role name allowed to run officer-only commands
 
-Optional values:
+If `DATA_BACKEND=google_sheets`, also set:
+
+- `SPREADSHEET_ID` - Google Sheet ID from the sheet URL
+- `GSPREAD_SERVICE_ACCOUNT_FILE` - Service account JSON file path, usually `service_account.json`
+
+If `DATA_BACKEND=sqlite`, also set:
 
 - `SQLITE_DATABASE_PATH` - Used only when `DATA_BACKEND=sqlite`
+
+### 5. SQLite backend setup (optional path)
+
+If you choose SQLite instead of Google Sheets:
+
+1. Set `DATA_BACKEND=sqlite` in `.env`.
+2. Set `SQLITE_DATABASE_PATH` to the desired file path (for example `loot_bot.sqlite3`).
+3. Ensure the bot process has write access to that folder.
+4. Start the bot. The SQLite file and schema are auto-created on first run.
 
 ## Install and Run
 
@@ -169,6 +182,23 @@ The bot now uses a repository factory instead of depending directly on Google Sh
 - The SQLite backend mirrors the same session-based schema, which makes future migration to PostgreSQL or another SQL database much easier.
 
 The backend selection lives in `repository.py`, and the SQLite implementation lives in `sqlite_storage.py`.
+
+## Switch From Google Sheets To SQLite
+
+Use this when you are ready to change the active backend.
+
+1. Stop the bot process.
+2. In `.env`, set `DATA_BACKEND=sqlite`.
+3. Set `SQLITE_DATABASE_PATH` to the target database file path.
+4. Keep Google settings in `.env` if you want an easy rollback, but they will be ignored while SQLite is active.
+5. Start the bot with `python bot.py`.
+6. Verify startup log shows `Storage backend ready: SQLiteRepository`.
+7. Run a quick smoke test:
+   - `/start_session`
+   - `/add_watch_channel`
+   - `/tickets <session_id>`
+   - `/raffle_loot <session_id> <item_name>`
+8. If anything fails, switch `DATA_BACKEND` back to `google_sheets` and restart.
 
 ## Git Notes
 
