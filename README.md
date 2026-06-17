@@ -109,6 +109,16 @@ If you choose SQLite instead of Google Sheets:
 3. Ensure the bot process has write access to that folder.
 4. Start the bot. The SQLite file and schema are auto-created on first run.
 
+### Convenience: create the SQLite schema ahead of time
+
+If you want to create the SQLite file and schema on the target machine without starting the bot, run the included helper:
+
+```powershell
+python scripts\init_sqlite.py
+```
+
+This will create the `loot_bot.sqlite3` file (or the path set in `SQLITE_DATABASE_PATH`) and create the tables `session_tickets`, `sessions`, and `loot_log`.
+
 ## Install and Run
 
 1. Open a terminal in the project folder.
