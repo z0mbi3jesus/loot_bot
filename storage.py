@@ -2,7 +2,7 @@
 
 The application should only depend on this repository interface. That makes it
 straightforward to keep Google Sheets for now while preparing a later migration
-to SQLite or a production database.
+to PostgreSQL or another production database.
 """
 
 from __future__ import annotations
@@ -30,6 +30,57 @@ class LootRepository(Protocol):
         ...
 
     def get_session_attendees(self, session_id: str) -> list[int]:
+        ...
+
+    def start_coin_session(self, voice_channel: str, attendee_ids: list[int]) -> str:
+        ...
+
+    def end_coin_session(self, session_id: str) -> bool:
+        ...
+
+    def get_coin_session(self, session_id: str) -> dict | None:
+        ...
+
+    def get_coin_session_attendees(self, session_id: str) -> list[int]:
+        ...
+
+    def get_shaftcoin_balance(self, discord_id: int) -> int:
+        ...
+
+    def adjust_shaftcoin_balance(
+        self,
+        discord_id: int,
+        display_name: str,
+        amount: int,
+        transaction_type: str,
+        description: str,
+        reference_id: str | None = None,
+    ) -> int:
+        ...
+
+    def create_purchase_request(
+        self,
+        requester_id: int,
+        requester_name: str,
+        amount: int,
+        description: str,
+    ) -> str:
+        ...
+
+    def get_purchase_request(self, request_id: str) -> dict | None:
+        ...
+
+    def get_purchase_requests(self, status: str | None = None) -> list[dict]:
+        ...
+
+    def update_purchase_request_status(
+        self,
+        request_id: str,
+        status: str,
+        approver_id: int | None = None,
+        approver_name: str | None = None,
+        reason: str | None = None,
+    ) -> bool:
         ...
 
     def start_session(self, voice_channel: str, attendee_ids: list[int]) -> str:

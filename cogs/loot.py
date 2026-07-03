@@ -10,6 +10,7 @@ from discord.ext import commands
 
 import config
 from sheets import SheetsClient
+from bot_utils import send_bot_message
 
 
 def _is_officer(interaction: discord.Interaction) -> bool:
@@ -54,25 +55,24 @@ class Loot(commands.Cog):
         await interaction.response.defer(ephemeral=False)
 
         if not _is_officer(interaction):
-            await interaction.followup.send(
-                f"Only members with the **{config.OFFICER_ROLE}** role can run raffles.",
+            await send_bot_message(
+                interaction,
+                content=f"Only members with the **{config.OFFICER_ROLE}** role can run raffles.",
                 ephemeral=True,
             )
             return
 
         session = self.sheets.get_session(session_id)
         if session is None:
-            await interaction.followup.send(
-                f"Session `{session_id}` was not found.",
-                ephemeral=True,
+            await send_bot_message(
+                interaction, content=f"Session `{session_id}` was not found.", ephemeral=True
             )
             return
 
         ticket_records = self.sheets.get_session_ticket_records(session_id)
         if not ticket_records:
-            await interaction.followup.send(
-                f"No ticket records found for session `{session_id}`.",
-                ephemeral=True,
+            await send_bot_message(
+                interaction, content=f"No ticket records found for session `{session_id}`.", ephemeral=True
             )
             return
 
@@ -92,8 +92,9 @@ class Loot(commands.Cog):
             })
 
         if not pool:
-            await interaction.followup.send(
-                "No eligible members with at least 1 ticket were found in this server.",
+            await send_bot_message(
+                interaction,
+                content="No eligible members with at least 1 ticket were found in this server.",
                 ephemeral=True,
             )
             return
@@ -134,7 +135,7 @@ class Loot(commands.Cog):
             value="\n".join(odds_lines) or "—",
             inline=False,
         )
-        await interaction.followup.send(embed=embed)
+        await send_bot_message(interaction, embed=embed)
 
 
 async def setup(bot: commands.Bot, sheets: SheetsClient) -> None:

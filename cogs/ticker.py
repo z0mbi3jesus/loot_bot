@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import timedelta
 from typing import Any
 
 import discord
@@ -22,6 +23,7 @@ from discord.ext import commands, tasks
 import config
 from sheets import SheetsClient
 from cogs.attendance import Attendance
+from bot_utils import send_bot_message
 
 log = logging.getLogger("quarter_master.ticker")
 
@@ -125,6 +127,61 @@ class Ticker(commands.Cog):
                     "Guild %s: awarded 1 ticket to %d member(s).", guild_id, len(awarded)
                 )
 
+        # SHAFTcoin™ reward loop
+        for guild_id, (session_id, coin_channel_id) in (
+            attendance_cog.get_all_active_coin_sessions().items() if attendance_cog else []
+        ):
+            guild = self.bot.get_guild(guild_id)
+            if guild is None:
+                continue
+
+            member_states = attendance_cog.get_coin_member_state(guild_id)
+            if not member_states:
+                continue
+
+            awarded_coin: set[int] = set()
+            now = discord.utils.utcnow()
+            for member_id, state in member_states.items():
+                checkpoint_start = state.get("checkpoint_start")
+                present = state.get("present", False)
+                last_seen = state.get("last_seen")
+
+                if checkpoint_start is None or last_seen is None:
+                    continue
+
+                if not present:
+                    if now - last_seen > timedelta(minutes=config.SHAFTCOIN_GRACE_MINUTES):
+                        state["checkpoint_start"] = now
+                    continue
+
+                if now - checkpoint_start < timedelta(minutes=_TICK_MINUTES):
+                    continue
+
+                member = guild.get_member(member_id)
+                display_name = member.display_name if member else str(member_id)
+                new_balance = self.sheets.adjust_shaftcoin_balance(
+                    member_id,
+                    display_name,
+                    1,
+                    "earn",
+                    "SHAFTcoin™ earned for 30-minute DAO voice session",
+                    session_id,
+                )
+                state["checkpoint_start"] = now
+                awarded_coin.add(member_id)
+                log.debug(
+                    "Awarded 1 SHAFTcoin™ to %s (%s) for coin session %s → balance %s",
+                    display_name,
+                    member_id,
+                    session_id,
+                    new_balance,
+                )
+
+            if awarded_coin:
+                log.info(
+                    "Guild %s: awarded 1 SHAFTcoin™ to %d member(s).", guild_id, len(awarded_coin)
+                )
+
     @tick.before_loop
     async def before_tick(self) -> None:
         await self.bot.wait_until_ready()
@@ -142,8 +199,9 @@ class Ticker(commands.Cog):
         self, interaction: discord.Interaction, channel: discord.VoiceChannel
     ) -> None:
         if not _is_officer(interaction):
-            await interaction.response.send_message(
-                f"Only members with the **{config.OFFICER_ROLE}** role can configure channels.",
+            await send_bot_message(
+                interaction,
+                content=f"Only members with the **{config.OFFICER_ROLE}** role can configure channels.",
                 ephemeral=True,
             )
             return
@@ -151,16 +209,19 @@ class Ticker(commands.Cog):
         guild_id = interaction.guild_id
         watched = self._watched.setdefault(guild_id, [])
         if channel.id in watched:
-            await interaction.response.send_message(
-                f"**{channel.name}** is already being watched.", ephemeral=True
+            await send_bot_message(
+                interaction, content=f"**{channel.name}** is already being watched.", ephemeral=True
             )
             return
 
         watched.append(channel.id)
         self._save_watched()
-        await interaction.response.send_message(
-            f"Now watching **{channel.name}** — members will earn 1 ticket every "
-            f"{_TICK_MINUTES} minutes while present."
+        await send_bot_message(
+            interaction,
+            content=(
+                f"Now watching **{channel.name}** — members will earn 1 ticket every "
+                f"{_TICK_MINUTES} minutes while present."
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -176,8 +237,9 @@ class Ticker(commands.Cog):
         self, interaction: discord.Interaction, channel: discord.VoiceChannel
     ) -> None:
         if not _is_officer(interaction):
-            await interaction.response.send_message(
-                f"Only members with the **{config.OFFICER_ROLE}** role can configure channels.",
+            await send_bot_message(
+                interaction,
+                content=f"Only members with the **{config.OFFICER_ROLE}** role can configure channels.",
                 ephemeral=True,
             )
             return
@@ -185,16 +247,14 @@ class Ticker(commands.Cog):
         guild_id = interaction.guild_id
         watched = self._watched.get(guild_id, [])
         if channel.id not in watched:
-            await interaction.response.send_message(
-                f"**{channel.name}** is not in the watch list.", ephemeral=True
+            await send_bot_message(
+                interaction, content=f"**{channel.name}** is not in the watch list.", ephemeral=True
             )
             return
 
         watched.remove(channel.id)
         self._save_watched()
-        await interaction.response.send_message(
-            f"Stopped watching **{channel.name}**."
-        )
+        await send_bot_message(interaction, content=f"Stopped watching **{channel.name}**.")
 
     # ------------------------------------------------------------------
     # /watch_channels
@@ -209,8 +269,9 @@ class Ticker(commands.Cog):
         channel_ids = self._watched.get(guild_id, [])
 
         if not channel_ids:
-            await interaction.response.send_message(
-                "No channels are being watched yet. Use `/add_watch_channel` to add one.",
+            await send_bot_message(
+                interaction,
+                content="No channels are being watched yet. Use `/add_watch_channel` to add one.",
                 ephemeral=True,
             )
             return
@@ -225,7 +286,7 @@ class Ticker(commands.Cog):
             description="\n".join(lines),
             color=discord.Color.blurple(),
         )
-        await interaction.response.send_message(embed=embed)
+        await send_bot_message(interaction, embed=embed)
 
 
 async def setup(bot: commands.Bot, sheets: SheetsClient) -> None:

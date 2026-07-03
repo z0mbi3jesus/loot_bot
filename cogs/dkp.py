@@ -8,6 +8,7 @@ from discord.ext import commands
 
 import config
 from sheets import SheetsClient
+from bot_utils import send_bot_message
 
 
 def _is_officer(interaction: discord.Interaction) -> bool:
@@ -43,8 +44,9 @@ class DKP(commands.Cog):
         record = self.sheets.get_session_tickets(session_id, target.id)
 
         if record is None:
-            await interaction.response.send_message(
-                f"No ticket record found for **{target.display_name}** in session `{session_id}`.",
+            await send_bot_message(
+                interaction,
+                content=f"No ticket record found for **{target.display_name}** in session `{session_id}`.",
                 ephemeral=True,
             )
             return
@@ -61,7 +63,7 @@ class DKP(commands.Cog):
             value=str(record["tickets"]),
             inline=True,
         )
-        await interaction.response.send_message(embed=embed)
+        await send_bot_message(interaction, embed=embed)
 
     # ------------------------------------------------------------------
     # /standings
@@ -82,8 +84,8 @@ class DKP(commands.Cog):
         records = self.sheets.get_session_ticket_standings(session_id, top_n=top)
 
         if not records:
-            await interaction.response.send_message(
-                f"No ticket records found for session `{session_id}`.", ephemeral=True
+            await send_bot_message(
+                interaction, content=f"No ticket records found for session `{session_id}`.", ephemeral=True
             )
             return
 
@@ -96,7 +98,7 @@ class DKP(commands.Cog):
             description="\n".join(lines),
             color=discord.Color.gold(),
         )
-        await interaction.response.send_message(embed=embed)
+        await send_bot_message(interaction, embed=embed)
 
     # ------------------------------------------------------------------
     # /add_tickets  (officer only)
@@ -123,8 +125,9 @@ class DKP(commands.Cog):
         await interaction.response.defer(ephemeral=False)
 
         if not _is_officer(interaction):
-            await interaction.followup.send(
-                f"Only members with the **{config.OFFICER_ROLE}** role can adjust tickets.",
+            await send_bot_message(
+                interaction,
+                content=f"Only members with the **{config.OFFICER_ROLE}** role can adjust tickets.",
                 ephemeral=True,
             )
             return
@@ -146,7 +149,7 @@ class DKP(commands.Cog):
         embed.add_field(name="Change", value=action, inline=True)
         embed.add_field(name="New Total", value=str(new_total), inline=True)
         embed.add_field(name="Reason", value=reason, inline=False)
-        await interaction.followup.send(embed=embed)
+        await send_bot_message(interaction, embed=embed)
 
 
 async def setup(bot: commands.Bot, sheets: SheetsClient) -> None:

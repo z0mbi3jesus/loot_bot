@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands
 
 import config
-from cogs import attendance, loot, dkp, ticker
+from cogs import attendance, loot, dkp, ticker, purchases
 from repository import create_repository
 
 # ---------------------------------------------------------------------------
@@ -46,6 +46,7 @@ class LootBot(commands.Bot):
         await loot.setup(self, self.sheets)
         await dkp.setup(self, self.sheets)
         await ticker.setup(self, self.sheets)
+        await purchases.setup(self, self.sheets)
 
         # Sync slash commands to the configured guild for instant availability.
         # Use bot.tree.sync() (no guild arg) to sync globally (takes ~1 hour).

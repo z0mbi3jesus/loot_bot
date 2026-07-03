@@ -30,6 +30,26 @@ _SESSION_HEADERS = [
     "voice_channel",
     "attendees",
 ]
+_COIN_SESSION_HEADERS = [
+    "session_id",
+    "start_time",
+    "end_time",
+    "voice_channel",
+    "attendees",
+]
+_PURCHASE_REQUEST_HEADERS = [
+    "request_id",
+    "requester_id",
+    "requester_name",
+    "amount",
+    "description",
+    "status",
+    "approver_id",
+    "approver_name",
+    "reason",
+    "created_at",
+    "updated_at",
+]
 _LOOT_HEADERS = [
     "timestamp",
     "session_id",
@@ -54,6 +74,32 @@ class SheetsClient:
             "session_tickets", _SESSION_TICKET_HEADERS
         )
         self._sessions: Worksheet = self._ensure_sheet("sessions", _SESSION_HEADERS)
+        self._coin_sessions: Worksheet = self._ensure_sheet(
+            "coin_sessions", _COIN_SESSION_HEADERS
+        )
+        self._purchase_requests: Worksheet = self._ensure_sheet(
+            "purchase_requests", _PURCHASE_REQUEST_HEADERS
+        )
+        self._shaftcoin_balances: Worksheet = self._ensure_sheet(
+            "shaftcoin_balances", [
+                "discord_id",
+                "display_name",
+                "balance",
+                "updated_at",
+            ],
+        )
+        self._shaftcoin_transactions: Worksheet = self._ensure_sheet(
+            "shaftcoin_transactions",
+            [
+                "timestamp",
+                "discord_id",
+                "type",
+                "amount",
+                "balance_after",
+                "reference_id",
+                "description",
+            ],
+        )
         self._loot: Worksheet = self._ensure_sheet("loot_log", _LOOT_HEADERS)
 
     # ------------------------------------------------------------------
@@ -81,6 +127,13 @@ class SheetsClient:
         col = self._sessions.col_values(1)
         try:
             return col.index(session_id) + 1
+        except ValueError:
+            return None
+
+    def _find_shaftcoin_balance_row(self, discord_id: int) -> Optional[int]:
+        col = self._shaftcoin_balances.col_values(1)
+        try:
+            return col.index(str(discord_id)) + 1
         except ValueError:
             return None
 
@@ -149,6 +202,117 @@ class SheetsClient:
             return []
         return [int(value) for value in attendees.split(",") if value]
 
+    def get_shaftcoin_balance(self, discord_id: int) -> int:
+        row = self._find_shaftcoin_balance_row(discord_id)
+        if row is None:
+            return 0
+        values = self._shaftcoin_balances.row_values(row)
+        return int(values[2]) if len(values) >= 3 else 0
+
+    def adjust_shaftcoin_balance(
+        self,
+        discord_id: int,
+        display_name: str,
+        amount: int,
+        transaction_type: str,
+        description: str,
+        reference_id: str | None = None,
+    ) -> int:
+        current = self.get_shaftcoin_balance(discord_id)
+        new_balance = current + amount
+        row = self._find_shaftcoin_balance_row(discord_id)
+        if row is None:
+            self._shaftcoin_balances.append_row(
+                [
+                    str(discord_id),
+                    display_name,
+                    str(new_balance),
+                    _now(),
+                ],
+                value_input_option="RAW",
+            )
+        else:
+            self._shaftcoin_balances.update_cell(row, 2, display_name)
+            self._shaftcoin_balances.update_cell(row, 3, str(new_balance))
+            self._shaftcoin_balances.update_cell(row, 4, _now())
+
+        self._shaftcoin_transactions.append_row(
+            [
+                _now(),
+                str(discord_id),
+                transaction_type,
+                str(amount),
+                str(new_balance),
+                reference_id or "",
+                description,
+            ],
+            value_input_option="RAW",
+        )
+        return new_balance
+
+    def create_purchase_request(
+        self,
+        requester_id: int,
+        requester_name: str,
+        amount: int,
+        description: str,
+    ) -> str:
+        request_id = str(uuid.uuid4())[:8].upper()
+        self._purchase_requests.append_row(
+            [
+                request_id,
+                str(requester_id),
+                requester_name,
+                str(amount),
+                description,
+                "pending",
+                "",
+                "",
+                "",
+                _now(),
+                _now(),
+            ],
+            value_input_option="RAW",
+        )
+        return request_id
+
+    def get_purchase_request(self, request_id: str) -> Optional[dict]:
+        rows = self._purchase_requests.get_all_records()
+        for record in rows:
+            if record.get("request_id") == request_id:
+                return record
+        return None
+
+    def get_purchase_requests(self, status: str | None = None) -> list[dict]:
+        rows = self._purchase_requests.get_all_records()
+        if status is None:
+            return rows
+        return [r for r in rows if r.get("status") == status]
+
+    def update_purchase_request_status(
+        self,
+        request_id: str,
+        status: str,
+        approver_id: int | None = None,
+        approver_name: str | None = None,
+        reason: str | None = None,
+    ) -> bool:
+        row_index = None
+        all_values = self._purchase_requests.get_all_values()
+        for index, values in enumerate(all_values[1:], start=2):
+            if len(values) >= 1 and values[0] == request_id:
+                row_index = index
+                break
+        if row_index is None:
+            return False
+
+        self._purchase_requests.update_cell(row_index, 6, status)
+        self._purchase_requests.update_cell(row_index, 7, str(approver_id or ""))
+        self._purchase_requests.update_cell(row_index, 8, approver_name or "")
+        self._purchase_requests.update_cell(row_index, 9, reason or "")
+        self._purchase_requests.update_cell(row_index, 11, _now())
+        return True
+
     # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------
@@ -191,6 +355,56 @@ class SheetsClient:
         values = self._sessions.row_values(row)
         headers = _SESSION_HEADERS
         return dict(zip(headers, values))
+
+    def start_coin_session(
+        self,
+        voice_channel: str,
+        attendee_ids: list[int],
+    ) -> str:
+        session_id = str(uuid.uuid4())[:8].upper()
+        attendees_str = ",".join(str(i) for i in attendee_ids)
+        self._coin_sessions.append_row(
+            [
+                session_id,
+                _now(),
+                "",  # end_time — filled by end_coin_session
+                voice_channel,
+                attendees_str,
+            ],
+            value_input_option="RAW",
+        )
+        return session_id
+
+    def end_coin_session(self, session_id: str) -> bool:
+        row = self._find_coin_session_row(session_id)
+        if row is None:
+            return False
+        self._coin_sessions.update_cell(row, 3, _now())
+        return True
+
+    def get_coin_session(self, session_id: str) -> Optional[dict]:
+        row = self._find_coin_session_row(session_id)
+        if row is None:
+            return None
+        values = self._coin_sessions.row_values(row)
+        headers = _COIN_SESSION_HEADERS
+        return dict(zip(headers, values))
+
+    def get_coin_session_attendees(self, session_id: str) -> list[int]:
+        session = self.get_coin_session(session_id)
+        if session is None:
+            return []
+        attendees = session.get("attendees", "")
+        if not attendees:
+            return []
+        return [int(value) for value in attendees.split(",") if value]
+
+    def _find_coin_session_row(self, session_id: str) -> Optional[int]:
+        rows = self._coin_sessions.get_all_values()
+        for index, values in enumerate(rows[1:], start=2):
+            if len(values) >= 1 and values[0] == session_id:
+                return index
+        return None
 
     # ------------------------------------------------------------------
     # Loot log

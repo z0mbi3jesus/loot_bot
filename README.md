@@ -4,14 +4,14 @@ Discord bot for tracking event attendance and running session-scoped ticket-weig
 
 ## Overview
 
-This bot currently uses Google Sheets in production. It tracks one session at a time, awards tickets on a timer to members in watched voice channels, and lets officers raffle loot against a specific session ID.
+This bot tracks event attendance, runs session-scoped ticket-weighted loot raffles, and includes a separate in-bot economy called SHAFTcoin™. The project now targets PostgreSQL as the primary production backend (Google Sheets remains supported for small deployments).
 
 ## First-Run Checklist
 
 1. Invite the bot to your Discord server.
 2. Choose a backend:
    - Google Sheets (current default)
-   - SQLite (local file database)
+   - PostgreSQL
 3. If using Google Sheets: create the sheet, create service account credentials, and place the JSON key in the project root.
 4. Copy `.env.example` to `.env` and fill in values for your selected backend.
 5. Activate the virtual environment.
@@ -21,9 +21,12 @@ This bot currently uses Google Sheets in production. It tracks one session at a 
 ## What It Does
 
 - Awards 1 ticket every 30 minutes to members present in watched voice channels.
+- Tracks a separate SHAFTcoin™ economy: officers can start/stop coin sessions and members earn coin on a 30-minute checkpoint with a 5-minute reconnect grace window.
 - Starts and ends loot sessions with attendee snapshots.
 - Runs weighted raffles where more tickets increase odds within a single session.
-- Logs sessions, session tickets, and loot outcomes to Google Sheets.
+- Provides an officer-managed purchase request workflow for spending SHAFTcoin™ (create, approve, deny).
+- Routes bot responses into an optional dedicated channel via `BOT_CHANNEL_ID` for centralized bot chatter.
+- Stores session, ticket, loot, coin balances, transactions, and purchase requests in PostgreSQL (or Google Sheets when configured).
 
 ## Requirements
 
@@ -40,12 +43,16 @@ This bot currently uses Google Sheets in production. It tracks one session at a 
 - `bot.py` - Bot entrypoint, startup, and command sync
 - `config.py` - Environment variable loading
 - `repository.py` - Storage backend selection
+- `storage.py` - Repository interface (storage abstraction)
 - `sheets.py` - Google Sheets storage backend
-- `sqlite_storage.py` - SQLite storage backend for migration/testing
+- `postgres_storage.py` - PostgreSQL storage backend
+- `bot_utils.py` - Centralized helper for routing bot messages to `BOT_CHANNEL_ID`
+- `scripts/init_postgres.py` - Helper to initialize the Postgres schema
 - `cogs/attendance.py` - Session start/end and attendance commands
 - `cogs/loot.py` - Weighted raffle command
 - `cogs/dkp.py` - Session ticket lookup and standings commands
 - `cogs/ticker.py` - 30-minute ticket loop and watch-channel commands
+- `cogs/purchases.py` - Purchase request and approval workflow
 
 ## Setup Steps
 
@@ -82,42 +89,52 @@ In the Discord Developer Portal:
 4. Create and download a JSON key.
 5. Place that JSON file in the project root.
 
+or set:
 ### 4. Configure `.env`
 
 Copy `.env.example` to `.env` and fill in:
 
 - `DISCORD_TOKEN` - Bot token from the Discord Developer Portal
 - `GUILD_ID` - Your Discord server ID for fast slash command sync
-- `DATA_BACKEND` - Set to `google_sheets` or `sqlite`
+- `DATA_BACKEND` - Set to `google_sheets` or `postgres` (recommended)
 - `OFFICER_ROLE` - Role name allowed to run officer-only commands
+- `BOT_CHANNEL_ID` - Optional: channel ID where the bot posts normal replies (keeps command channels clean)
 
 If `DATA_BACKEND=google_sheets`, also set:
 
 - `SPREADSHEET_ID` - Google Sheet ID from the sheet URL
 - `GSPREAD_SERVICE_ACCOUNT_FILE` - Service account JSON file path, usually `service_account.json`
 
-If `DATA_BACKEND=sqlite`, also set:
+If `DATA_BACKEND=postgres`, also set:
 
-- `SQLITE_DATABASE_PATH` - Used only when `DATA_BACKEND=sqlite`
+- `DATABASE_URL` - PostgreSQL connection string (preferred)
 
-### 5. SQLite backend setup (optional path)
+or set:
 
-If you choose SQLite instead of Google Sheets:
+- `PGHOST`
+- `PGPORT`
+- `PGDATABASE`
+- `PGUSER`
+- `PGPASSWORD`
 
-1. Set `DATA_BACKEND=sqlite` in `.env`.
-2. Set `SQLITE_DATABASE_PATH` to the desired file path (for example `loot_bot.sqlite3`).
-3. Ensure the bot process has write access to that folder.
-4. Start the bot. The SQLite file and schema are auto-created on first run.
+### 5. PostgreSQL backend setup (optional path)
 
-### Convenience: create the SQLite schema ahead of time
+If you choose PostgreSQL instead of Google Sheets:
 
-If you want to create the SQLite file and schema on the target machine without starting the bot, run the included helper:
+1. Set `DATA_BACKEND=postgres` in `.env`.
+2. Set `DATABASE_URL` or the individual `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` values.
+3. Ensure the bot can connect to the PostgreSQL server from the host where it runs.
+4. Start the bot. The database schema is auto-created on first run.
+
+### Convenience: create the PostgreSQL schema ahead of time
+
+If you want to create the PostgreSQL schema on the target machine without starting the bot, run the included helper:
 
 ```powershell
-python scripts\init_sqlite.py
+python scripts\init_postgres.py
 ```
 
-This will create the `loot_bot.sqlite3` file (or the path set in `SQLITE_DATABASE_PATH`) and create the tables `session_tickets`, `sessions`, and `loot_log`.
+This will connect to PostgreSQL using your `.env` settings and create the tables `session_tickets`, `sessions`, `coin_sessions`, `shaftcoin_balances`, `shaftcoin_transactions`, `purchase_requests`, and `loot_log`.
 
 ## Install and Run
 
@@ -152,8 +169,13 @@ Expected startup lines include:
 
 - `/start_session <voice_channel>`
 - `/end_session`
+- `/start_coin_session <voice_channel>`
+- `/stop_coin_session`
 - `/raffle_loot <session_id> <item_name>`
 - `/add_tickets <session_id> <member> <amount> [reason]`
+- `/create_purchase_request <amount> <description>`
+- `/approve_purchase <request_id> <reason?>`
+- `/deny_purchase <request_id> <reason?>`
 - `/add_watch_channel <voice_channel>`
 - `/remove_watch_channel <voice_channel>`
 
@@ -163,6 +185,8 @@ Expected startup lines include:
 - `/tickets <session_id> [member]`
 - `/standings <session_id> [top]`
 - `/watch_channels`
+- `/balance [member]` - Show SHAFTcoin™ balance
+- `/request_purchase <amount> <description>` - Create a purchase request (officer approval required)
 
 ## Google Sheets Data Model
 
@@ -188,21 +212,20 @@ The bot auto-creates these worksheets if they do not already exist:
 The bot now uses a repository factory instead of depending directly on Google Sheets.
 
 - `DATA_BACKEND=google_sheets` keeps the current live behavior.
-- `DATA_BACKEND=sqlite` switches the app to a local SQLite database file.
-- The SQLite backend mirrors the same session-based schema, which makes future migration to PostgreSQL or another SQL database much easier.
+- `DATA_BACKEND=postgres` switches the app to PostgreSQL.
 
-The backend selection lives in `repository.py`, and the SQLite implementation lives in `sqlite_storage.py`.
+The backend selection lives in `repository.py`, and the PostgreSQL implementation lives in `postgres_storage.py`.
 
-## Switch From Google Sheets To SQLite
+## Switch From Google Sheets To PostgreSQL
 
 Use this when you are ready to change the active backend.
 
 1. Stop the bot process.
-2. In `.env`, set `DATA_BACKEND=sqlite`.
-3. Set `SQLITE_DATABASE_PATH` to the target database file path.
-4. Keep Google settings in `.env` if you want an easy rollback, but they will be ignored while SQLite is active.
+2. In `.env`, set `DATA_BACKEND=postgres`.
+3. Set `DATABASE_URL` or the individual Postgres `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` values.
+4. Keep Google settings in `.env` if you want an easy rollback, but they will be ignored while Postgres is active.
 5. Start the bot with `python bot.py`.
-6. Verify startup log shows `Storage backend ready: SQLiteRepository`.
+6. Verify startup log shows `Storage backend ready: PostgresRepository`.
 7. Run a quick smoke test:
    - `/start_session`
    - `/add_watch_channel`

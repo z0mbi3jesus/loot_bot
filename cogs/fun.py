@@ -7,6 +7,7 @@ import random
 import discord
 from discord import app_commands
 from discord.ext import commands
+from bot_utils import send_bot_message
 
 
 class Fun(commands.Cog):
@@ -22,7 +23,7 @@ class Fun(commands.Cog):
             description=f"Result: **{result}**",
             color=discord.Color.orange(),
         )
-        await interaction.response.send_message(embed=embed)
+        await send_bot_message(interaction, embed=embed)
 
     @app_commands.command(
         name="roll_d20",
@@ -36,7 +37,7 @@ class Fun(commands.Cog):
             description=f"You rolled: **{roll}**",
             color=discord.Color.teal(),
         )
-        await interaction.response.send_message(embed=embed)
+        await send_bot_message(interaction, embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:
